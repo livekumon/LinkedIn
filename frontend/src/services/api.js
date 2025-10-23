@@ -45,12 +45,14 @@ export const authAPI = {
     ...data,
     tenantId: process.env.REACT_APP_TENANT_ID || 'default-tenant'
   }),
-  googleLogin: (idToken) => api.post('/auth/google-login', {
+  googleLogin: (idToken, referralCode = null) => api.post('/auth/google-login', {
     idToken,
+    referralCode,
     tenantId: process.env.REACT_APP_TENANT_ID || 'default-tenant'
   }),
   getCurrentUser: () => api.get('/auth/me'),
   logout: () => api.post('/auth/logout'),
+  updatePreferences: (data) => api.put('/auth/preferences', data),
 };
 
 export default api;

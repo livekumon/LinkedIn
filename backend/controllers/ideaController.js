@@ -83,7 +83,7 @@ exports.getIdeaById = async (req, res) => {
 // Update idea
 exports.updateIdea = async (req, res) => {
   try {
-    const { title, content, tags, category, status, isFavorite } = req.body;
+    const { title, content, tags, category, status, isFavorite, scheduledFor } = req.body;
 
     const idea = await Idea.findOne({
       _id: req.params.id,
@@ -95,12 +95,25 @@ exports.updateIdea = async (req, res) => {
       return notFoundResponse(res, 'Idea not found');
     }
 
+    // Log schedule updates for debugging
+    if (scheduledFor !== undefined) {
+      console.log('Schedule Update:');
+      console.log('- Idea ID:', req.params.id);
+      console.log('- Previous scheduledFor:', idea.scheduledFor);
+      console.log('- New scheduledFor:', scheduledFor);
+    }
+
     if (title) idea.title = title;
     if (content) idea.content = content;
     if (tags) idea.tags = tags;
     if (category) idea.category = category;
     if (status) idea.status = status;
     if (isFavorite !== undefined) idea.isFavorite = isFavorite;
+    
+    // Handle scheduledFor - can be set or cleared (null)
+    if (scheduledFor !== undefined) {
+      idea.scheduledFor = scheduledFor;
+    }
     
     idea.updatedBy = req.user._id;
     await idea.save();

@@ -20,6 +20,10 @@ import {
   StarOutline,
   LogoutOutlined,
   Delete,
+  Payment as SubscriptionIcon,
+  LinkedIn as LinkedInIcon,
+  History as HistoryIcon,
+  Tag,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 
@@ -35,7 +39,10 @@ const Sidebar = ({ mobileOpen, handleDrawerToggle }) => {
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardOutlined />, path: '/dashboard' },
     { text: 'Ideas', icon: <LightbulbOutlined />, path: '/ideas' },
-    { text: 'Favorites', icon: <StarOutline />, path: '/favorites' },
+    { text: 'LinkedIn Connections', icon: <LinkedInIcon />, path: '/linkedin-connections' },
+    { text: 'Subscriptions', icon: <SubscriptionIcon />, path: '/subscriptions' },
+    { text: 'Hashtags & Mentions', icon: <Tag />, path: '/tagsets' },
+    { text: 'Credit History', icon: <HistoryIcon />, path: '/credit-history' },
     { text: 'Recycle Bin', icon: <Delete />, path: '/recycle-bin' },
   ];
 

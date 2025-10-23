@@ -43,6 +43,64 @@ const userSchema = new mongoose.Schema({
   },
   lastLogin: {
     type: Date
+  },
+  currentPlan: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Plan'
+  },
+  aiCreditsRemaining: {
+    type: Number,
+    default: 15,
+    min: 0
+  },
+  aiCreditsTotal: {
+    type: Number,
+    default: 15,
+    min: 0
+  },
+  planHistory: [{
+    planId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Plan'
+    },
+    purchasedAt: {
+      type: Date,
+      default: Date.now
+    },
+    creditsGranted: {
+      type: Number,
+      default: 0
+    },
+    paymentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Payment'
+    }
+  }],
+  timezone: {
+    type: String,
+    default: 'America/New_York'
+  },
+  referralCode: {
+    type: String,
+    unique: true,
+    sparse: true,
+    index: true
+  },
+  referredBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  referralStats: {
+    totalReferred: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    creditsEarnedFromReferrals: {
+      type: Number,
+      default: 0,
+      min: 0
+    }
   }
 });
 

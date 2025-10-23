@@ -1,0 +1,238 @@
+/* Calendar View Custom Styles */
+
+/* Override react-big-calendar default styles */
+.rbc-calendar {
+  font-family: 'Inter', 'Roboto', sans-serif;
+}
+
+.rbc-header {
+  padding: 10px 3px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #1C1C1C;
+  border-bottom: 2px solid #0077B5;
+  background-color: #F4F6F8;
+}
+
+.rbc-today {
+  background-color: #E3F2FD;
+}
+
+.rbc-off-range-bg {
+  background-color: #FAFAFA;
+}
+
+.rbc-event {
+  padding: 2px 5px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  border: none !important;
+  transition: all 0.2s ease;
+}
+
+.rbc-event:hover {
+  opacity: 1 !important;
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.rbc-event.rbc-selected {
+  background-color: #00A3E0 !important;
+}
+
+/* Drag and Drop Styles */
+.rbc-addons-dnd .rbc-event {
+  cursor: move;
+}
+
+.rbc-addons-dnd .rbc-event:hover {
+  cursor: move;
+}
+
+.rbc-addons-dnd .rbc-event:active {
+  cursor: grabbing !important;
+}
+
+.rbc-addons-dnd-dragging {
+  opacity: 0.6;
+  cursor: grabbing !important;
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.rbc-addons-dnd-drag-preview {
+  opacity: 0.7;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.rbc-addons-dnd-over {
+  background-color: rgba(0, 119, 181, 0.15) !important;
+}
+
+/* Non-draggable events (posted) */
+.rbc-event[style*="cursor: pointer"] {
+  cursor: pointer !important;
+}
+
+.rbc-event[style*="cursor: pointer"]:hover {
+  cursor: pointer !important;
+  transform: scale(1.02) !important;
+}
+
+.rbc-month-view {
+  border: 1px solid #E0E0E0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.rbc-month-row {
+  border-color: #E0E0E0;
+}
+
+.rbc-day-bg {
+  border-color: #E0E0E0;
+}
+
+.rbc-date-cell {
+  padding: 5px;
+  text-align: right;
+}
+
+.rbc-button-link {
+  color: #5F6B7A;
+  font-weight: 500;
+}
+
+.rbc-today .rbc-button-link {
+  color: #0077B5;
+  font-weight: 700;
+}
+
+.rbc-toolbar {
+  padding: 15px 10px;
+  margin-bottom: 15px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.rbc-toolbar button {
+  color: #1C1C1C;
+  border: 1px solid #E0E0E0;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background-color: #FFFFFF;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.rbc-toolbar button:hover {
+  background-color: #F4F6F8;
+  border-color: #0077B5;
+  color: #0077B5;
+}
+
+.rbc-toolbar button.rbc-active {
+  background-color: #0077B5;
+  color: #FFFFFF;
+  border-color: #0077B5;
+}
+
+.rbc-toolbar button:active,
+.rbc-toolbar button.rbc-active:active {
+  background-color: #005a8c;
+  border-color: #005a8c;
+}
+
+.rbc-toolbar-label {
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: #1C1C1C;
+  flex-grow: 1;
+  text-align: center;
+}
+
+/* Week and Day views */
+.rbc-time-view {
+  border: 1px solid #E0E0E0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.rbc-time-header {
+  border-bottom: 2px solid #0077B5;
+}
+
+.rbc-time-content {
+  border-top: 2px solid #E0E0E0;
+}
+
+.rbc-current-time-indicator {
+  background-color: #F9A826;
+  height: 2px;
+}
+
+.rbc-time-slot {
+  border-top: 1px solid #f0f0f0;
+  min-height: 40px;
+}
+
+.rbc-day-slot .rbc-event {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.rbc-day-slot .rbc-event:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+}
+
+.rbc-time-column {
+  cursor: pointer;
+}
+
+/* Make time labels more visible */
+.rbc-time-slot .rbc-label {
+  font-size: 0.75rem;
+  color: #5F6B7A;
+  font-weight: 500;
+}
+
+/* Agenda view */
+.rbc-agenda-view {
+  border: 1px solid #E0E0E0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.rbc-agenda-table {
+  border-color: #E0E0E0;
+}
+
+.rbc-agenda-date-cell,
+.rbc-agenda-time-cell {
+  font-weight: 600;
+  color: #0077B5;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .rbc-toolbar {
+    flex-direction: column;
+  }
+  
+  .rbc-toolbar-label {
+    order: -1;
+    width: 100%;
+    text-align: center;
+    font-size: 1.1rem;
+  }
+  
+  .rbc-toolbar button {
+    font-size: 0.875rem;
+    padding: 6px 12px;
+  }
+}
+

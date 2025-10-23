@@ -11,8 +11,7 @@ const linkedInPostSchema = new mongoose.Schema({
   ideaId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Idea',
-    required: true,
-    index: true
+    required: true
   },
   articleVersionId: {
     type: mongoose.Schema.Types.ObjectId,

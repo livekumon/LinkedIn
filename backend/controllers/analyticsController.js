@@ -3,6 +3,9 @@ const Idea = require('../models/Idea');
 const LinkedInPost = require('../models/LinkedInPost');
 const ArticleVersion = require('../models/ArticleVersion');
 const LinkedInConnection = require('../models/LinkedInConnection');
+const User = require('../models/User');
+const Payment = require('../models/Payment');
+const CreditTransaction = require('../models/CreditTransaction');
 
 // Get dashboard analytics
 const getDashboardAnalytics = async (req, res) => {
@@ -87,6 +90,75 @@ const getDashboardAnalytics = async (req, res) => {
     .limit(5)
     .select('title content status postedAt createdAt');
 
+    // Get user credit info
+    const user = await User.findById(userId).select('aiCreditsRemaining aiCreditsTotal currentPlan');
+
+    // Get payment statistics
+    const totalPayments = await Payment.countDocuments({
+      userId,
+      tenantId,
+      status: 'completed',
+      softDelete: false
+    });
+
+    const totalSpentResult = await Payment.aggregate([
+      {
+        $match: {
+          userId: new mongoose.Types.ObjectId(userId),
+          tenantId: tenantId,
+          status: 'completed',
+          softDelete: false
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' }
+        }
+      }
+    ]);
+
+    // Get recent payment
+    const lastPayment = await Payment.findOne({
+      userId,
+      tenantId,
+      status: 'completed',
+      softDelete: false
+    })
+    .sort({ completedAt: -1 })
+    .select('amount completedAt aiCreditsGranted')
+    .populate('planId', 'displayName');
+
+    // Get credit usage statistics
+    const creditsUsed = (user.aiCreditsTotal || 0) - (user.aiCreditsRemaining || 0);
+    
+    const creditStats = await CreditTransaction.aggregate([
+      {
+        $match: {
+          userId: new mongoose.Types.ObjectId(userId),
+          tenantId: tenantId,
+          softDelete: false
+        }
+      },
+      {
+        $group: {
+          _id: '$transactionType',
+          count: { $sum: 1 },
+          total: { $sum: '$creditsChanged' }
+        }
+      }
+    ]);
+
+    // Get recent transactions (last 5)
+    const recentTransactions = await CreditTransaction.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      tenantId,
+      softDelete: false
+    })
+    .sort({ createdAt: -1 })
+    .limit(5)
+    .select('transactionType creditsChanged reason notes createdAt');
+
     // Format idea stats
     const formattedIdeaStats = {
       draft: 0,
@@ -122,6 +194,27 @@ const getDashboardAnalytics = async (req, res) => {
           posts: recentPosts
         }
       },
+      // AI Credits
+      credits: {
+        remaining: user?.aiCreditsRemaining || 0,
+        total: user?.aiCreditsTotal || 0,
+        used: creditsUsed,
+        usagePercentage: user?.aiCreditsTotal > 0 ? Math.round((creditsUsed / user.aiCreditsTotal) * 100) : 0
+      },
+      // Payments
+      payments: {
+        totalPayments,
+        totalSpent: totalSpentResult.length > 0 ? totalSpentResult[0].total : 0,
+        lastPayment: lastPayment ? {
+          amount: lastPayment.amount,
+          date: lastPayment.completedAt,
+          credits: lastPayment.aiCreditsGranted,
+          plan: lastPayment.planId?.displayName || 'Plan'
+        } : null
+      },
+      // Credit Usage Stats
+      creditUsage: creditStats,
+      recentTransactions,
       topIdeas
     };
 

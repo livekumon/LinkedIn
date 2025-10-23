@@ -10,6 +10,13 @@ exports.getLinkedInAuthUrl = async (req, res) => {
     const state = Buffer.from(JSON.stringify({ userId: req.user._id.toString() })).toString('base64');
     const scope = 'openid profile email w_member_social';
 
+    // Debug logging
+    console.log('LinkedIn OAuth Configuration:', {
+      clientId: clientId ? 'SET' : 'NOT SET',
+      redirectUri,
+      isProduction: process.env.NODE_ENV === 'production'
+    });
+
     const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&scope=${encodeURIComponent(scope)}`;
 
     return successResponse(res, { authUrl }, 'LinkedIn auth URL generated');
@@ -54,7 +61,7 @@ exports.linkedInCallback = async (req, res) => {
     const { code, state } = req.query;
 
     if (!code) {
-      return res.redirect(`${process.env.FRONTEND_URL}/ideas?error=no_code`);
+      return res.redirect(`${process.env.FRONTEND_URL}/linkedin-connections?error=no_code`);
     }
 
     // Decode state to get userId
@@ -91,7 +98,7 @@ exports.linkedInCallback = async (req, res) => {
     const user = await User.findById(userId);
 
     if (!user) {
-      return res.redirect(`${process.env.FRONTEND_URL}/ideas?error=user_not_found`);
+      return res.redirect(`${process.env.FRONTEND_URL}/linkedin-connections?error=user_not_found`);
     }
 
     // Check if already connected
@@ -133,10 +140,10 @@ exports.linkedInCallback = async (req, res) => {
     }
 
     // Redirect back to frontend with success
-    return res.redirect(`${process.env.FRONTEND_URL}/ideas?linkedin=connected`);
+    return res.redirect(`${process.env.FRONTEND_URL}/linkedin-connections?linkedin=connected`);
   } catch (error) {
     console.error('LinkedIn callback error:', error);
-    return res.redirect(`${process.env.FRONTEND_URL}/ideas?error=callback_failed`);
+    return res.redirect(`${process.env.FRONTEND_URL}/linkedin-connections?error=callback_failed`);
   }
 };
 

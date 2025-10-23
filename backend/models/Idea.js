@@ -42,6 +42,16 @@ const ideaSchema = new mongoose.Schema({
   },
   scheduledFor: {
     type: Date
+  },
+  creditsUsed: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  aiGenerationCount: {
+    type: Number,
+    default: 0,
+    min: 0
   }
 });
 

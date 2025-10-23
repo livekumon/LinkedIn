@@ -29,9 +29,17 @@ import {
   Brightness4,
   Brightness7,
   CardMembership,
+  History as HistoryIcon,
+  Tag,
+  Public,
+  Check,
+  Schedule,
+  CalendarMonth,
+  CardGiftcard,
 } from '@mui/icons-material';
 import LinkedInConnectModal from '../LinkedInConnectModal';
 import { linkedInAPI } from '../../services/linkedInService';
+import { authAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useThemeMode } from '../../context/ThemeContext';
 
@@ -41,18 +49,45 @@ const MainLayout = ({ children }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [linkedInMenuAnchorEl, setLinkedInMenuAnchorEl] = useState(null);
   const [navMenuAnchorEl, setNavMenuAnchorEl] = useState(null);
+  const [timezoneMenuAnchorEl, setTimezoneMenuAnchorEl] = useState(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
   const { mode, toggleTheme } = useThemeMode();
+  
+  // Initialize timezone from user object or fallback to browser timezone
+  const [selectedTimezone, setSelectedTimezone] = useState(() => {
+    return user?.timezone || localStorage.getItem('userTimezone') || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  });
+
+  // Common timezones
+  const timezones = [
+    { label: 'Pacific Time (PT)', value: 'America/Los_Angeles' },
+    { label: 'Mountain Time (MT)', value: 'America/Denver' },
+    { label: 'Central Time (CT)', value: 'America/Chicago' },
+    { label: 'Eastern Time (ET)', value: 'America/New_York' },
+    { label: 'UTC', value: 'UTC' },
+    { label: 'London (GMT)', value: 'Europe/London' },
+    { label: 'Paris (CET)', value: 'Europe/Paris' },
+    { label: 'Tokyo (JST)', value: 'Asia/Tokyo' },
+    { label: 'Sydney (AEST)', value: 'Australia/Sydney' },
+    { label: 'India (IST)', value: 'Asia/Kolkata' },
+    { label: 'Dubai (GST)', value: 'Asia/Dubai' },
+    { label: 'Singapore (SGT)', value: 'Asia/Singapore' },
+  ];
 
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardOutlined />, path: '/dashboard' },
     { text: 'Ideas', icon: <LightbulbOutlined />, path: '/ideas' },
-    { text: 'Favorites', icon: <StarOutline />, path: '/favorites' },
+    { text: 'Calendar View', icon: <CalendarMonth />, path: '/calendar' },
+    { text: 'Scheduled Posts', icon: <Schedule />, path: '/scheduled-posts' },
+    { text: 'LinkedIn Connections', icon: <LinkedIn />, path: '/linkedin-connections' },
     { text: 'Subscriptions', icon: <CardMembership />, path: '/subscriptions' },
+    { text: 'Refer & Earn', icon: <CardGiftcard />, path: '/referrals' },
+    { text: 'Hashtags & Mentions', icon: <Tag />, path: '/tagsets' },
+    { text: 'Credit History', icon: <HistoryIcon />, path: '/credit-history' },
     { text: 'Recycle Bin', icon: <Delete />, path: '/recycle-bin' },
   ];
 
@@ -94,6 +129,14 @@ const MainLayout = ({ children }) => {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
+
+  // Update timezone when user object changes (e.g., on login)
+  useEffect(() => {
+    if (user?.timezone) {
+      setSelectedTimezone(user.timezone);
+      localStorage.setItem('userTimezone', user.timezone);
+    }
+  }, [user]);
 
   const fetchConnectionStatus = async () => {
     try {
@@ -137,6 +180,39 @@ const MainLayout = ({ children }) => {
 
   const handleLinkedInMenuClose = () => {
     setLinkedInMenuAnchorEl(null);
+  };
+
+  const handleTimezoneMenuClick = (event) => {
+    setTimezoneMenuAnchorEl(event.currentTarget);
+  };
+
+  const handleTimezoneMenuClose = () => {
+    setTimezoneMenuAnchorEl(null);
+  };
+
+  const handleTimezoneChange = async (timezone) => {
+    setSelectedTimezone(timezone);
+    localStorage.setItem('userTimezone', timezone);
+    handleTimezoneMenuClose();
+    
+    // Save to backend
+    try {
+      await authAPI.updatePreferences({ timezone });
+    } catch (error) {
+      console.error('Failed to save timezone preference:', error);
+    }
+    
+    // Trigger a re-render to update all time displays
+    window.dispatchEvent(new Event('timezonechange'));
+  };
+
+  const getTimezoneLabel = () => {
+    const tz = timezones.find(t => t.value === selectedTimezone);
+    if (tz) return tz.label;
+    
+    // If custom timezone, show abbreviated version
+    const parts = selectedTimezone.split('/');
+    return parts[parts.length - 1].replace('_', ' ');
   };
 
   return (
@@ -270,6 +346,89 @@ const MainLayout = ({ children }) => {
           </Typography>
 
           <Box sx={{ flexGrow: 1 }} />
+
+          {/* Timezone Selector */}
+          <Button
+            onClick={handleTimezoneMenuClick}
+            startIcon={<Public />}
+            endIcon={<ExpandMore />}
+            size="small"
+            sx={{
+              mr: 2,
+              color: 'text.secondary',
+              textTransform: 'none',
+              display: { xs: 'none', md: 'flex' },
+              '&:hover': {
+                bgcolor: 'background.default',
+              },
+            }}
+          >
+            <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+              {getTimezoneLabel()}
+            </Typography>
+          </Button>
+
+          {/* Mobile Timezone Icon */}
+          <IconButton
+            onClick={handleTimezoneMenuClick}
+            sx={{
+              mr: 2,
+              color: 'text.secondary',
+              display: { xs: 'flex', md: 'none' },
+              '&:hover': {
+                bgcolor: 'background.default',
+              },
+            }}
+            title={getTimezoneLabel()}
+          >
+            <Public />
+          </IconButton>
+
+          {/* Timezone Menu */}
+          <Menu
+            anchorEl={timezoneMenuAnchorEl}
+            open={Boolean(timezoneMenuAnchorEl)}
+            onClose={handleTimezoneMenuClose}
+            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+            PaperProps={{
+              sx: {
+                minWidth: 250,
+                mt: 1,
+                maxHeight: 400,
+              }
+            }}
+          >
+            <Box sx={{ px: 2, py: 1.5, bgcolor: 'background.default' }}>
+              <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                SELECT TIMEZONE
+              </Typography>
+            </Box>
+            <Divider />
+            {timezones.map((tz) => (
+              <MenuItem
+                key={tz.value}
+                onClick={() => handleTimezoneChange(tz.value)}
+                selected={selectedTimezone === tz.value}
+                sx={{
+                  py: 1.5,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <ListItemText 
+                  primary={tz.label}
+                  primaryTypographyProps={{
+                    fontSize: '0.9rem',
+                    fontWeight: selectedTimezone === tz.value ? 600 : 400,
+                  }}
+                />
+                {selectedTimezone === tz.value && (
+                  <Check fontSize="small" color="primary" />
+                )}
+              </MenuItem>
+            ))}
+          </Menu>
 
           {/* Theme Toggle Button */}
           <IconButton

@@ -26,8 +26,7 @@ const baseSchemaFields = {
   },
   softDelete: {
     type: Boolean,
-    default: false,
-    index: true
+    default: false
   },
   tenantId: {
     type: String,

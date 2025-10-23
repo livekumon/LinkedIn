@@ -3,6 +3,8 @@ const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
 const { successResponse, errorResponse, validationErrorResponse } = require('../utils/responseHelper');
+const { processReferral } = require('./referralController');
+const crypto = require('crypto');
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -16,7 +18,7 @@ const generateToken = (userId) => {
 // Register with Email
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, tenantId } = req.body;
+    const { name, email, password, tenantId, referralCode } = req.body;
 
     // Validation
     if (!name || !email || !password || !tenantId) {
@@ -31,6 +33,15 @@ exports.register = async (req, res) => {
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
+    
+    // Generate unique referral code for this new user
+    let newUserReferralCode;
+    let isUnique = false;
+    while (!isUnique) {
+      newUserReferralCode = crypto.randomBytes(4).toString('hex').toUpperCase();
+      const existing = await User.findOne({ referralCode: newUserReferralCode });
+      if (!existing) isUnique = true;
+    }
 
     // Create user
     const user = await User.create({
@@ -38,6 +49,7 @@ exports.register = async (req, res) => {
       email,
       password: hashedPassword,
       authProvider: 'local',
+      referralCode: newUserReferralCode,
       tenantId,
       createdBy: null, // Will be set after first user is created
       updatedBy: null
@@ -47,6 +59,15 @@ exports.register = async (req, res) => {
     user.createdBy = user._id;
     user.updatedBy = user._id;
     await user.save();
+    
+    // Process referral if code was provided
+    if (referralCode) {
+      console.log('Processing referral code during registration:', referralCode);
+      await processReferral(referralCode, user._id, tenantId);
+      // Reload user to get updated credits from referral bonus
+      user = await User.findById(user._id);
+      console.log('User credits after referral:', user.aiCreditsRemaining);
+    }
 
     // Generate token
     const token = generateToken(user._id);
@@ -117,7 +138,7 @@ exports.login = async (req, res) => {
 // Google SSO Login
 exports.googleLogin = async (req, res) => {
   try {
-    const { idToken, tenantId } = req.body;
+    const { idToken, tenantId, referralCode } = req.body;
 
     if (!idToken || !tenantId) {
       return validationErrorResponse(res, { message: 'Google ID token and tenantId are required' });
@@ -137,6 +158,8 @@ exports.googleLogin = async (req, res) => {
       $or: [{ googleId }, { email, tenantId }],
       softDelete: false 
     });
+    
+    let isNewUser = false;
 
     if (user) {
       // Update existing user
@@ -149,6 +172,15 @@ exports.googleLogin = async (req, res) => {
       user.updatedBy = user._id;
       await user.save();
     } else {
+      // Generate unique referral code for new user
+      let newUserReferralCode;
+      let isUnique = false;
+      while (!isUnique) {
+        newUserReferralCode = crypto.randomBytes(4).toString('hex').toUpperCase();
+        const existing = await User.findOne({ referralCode: newUserReferralCode });
+        if (!existing) isUnique = true;
+      }
+      
       // Create new user
       user = await User.create({
         name,
@@ -157,6 +189,7 @@ exports.googleLogin = async (req, res) => {
         profilePicture: picture,
         authProvider: 'google',
         isEmailVerified: true,
+        referralCode: newUserReferralCode,
         tenantId,
         createdBy: null,
         updatedBy: null
@@ -166,6 +199,15 @@ exports.googleLogin = async (req, res) => {
       user.createdBy = user._id;
       user.updatedBy = user._id;
       await user.save();
+      
+      isNewUser = true;
+    }
+    
+    // Process referral if code was provided and user is new
+    if (isNewUser && referralCode) {
+      await processReferral(referralCode, user._id, tenantId);
+      // Reload user to get updated credits
+      user = await User.findById(user._id);
     }
 
     // Generate token
@@ -200,6 +242,31 @@ exports.logout = async (req, res) => {
     return successResponse(res, null, 'Logout successful');
   } catch (error) {
     console.error('Logout error:', error);
+    return errorResponse(res, error.message, 500);
+  }
+};
+
+// Update User Preferences
+exports.updatePreferences = async (req, res) => {
+  try {
+    const { timezone } = req.body;
+
+    if (!timezone) {
+      return validationErrorResponse(res, { message: 'Timezone is required' });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return errorResponse(res, 'User not found', 404);
+    }
+
+    user.timezone = timezone;
+    user.updatedBy = req.user._id;
+    await user.save();
+
+    return successResponse(res, { user }, 'Preferences updated successfully');
+  } catch (error) {
+    console.error('Update preferences error:', error);
     return errorResponse(res, error.message, 500);
   }
 };

@@ -18,6 +18,10 @@ import {
   ListItemText,
   Button,
   Grid,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   LightbulbOutlined,
@@ -33,10 +37,20 @@ import {
   Save,
   FilterList,
 } from '@mui/icons-material';
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import dayjs from 'dayjs';
 import { ideaAPI } from '../services/ideaService';
 import { geminiAPI } from '../services/geminiService';
 import MainLayout from '../components/Layout/MainLayout';
 import ArticleGeneratorModal from '../components/ArticleGeneratorModal';
+import { 
+  convertUTCToUserTimezone, 
+  convertUserTimezoneToUTC, 
+  formatTimeLocale,
+  getCurrentTimeInUserTimezone 
+} from '../utils/timezoneUtils';
 
 const Ideas = () => {
   const [ideas, setIdeas] = useState([]);
@@ -54,9 +68,28 @@ const Ideas = () => {
   const [filterMenuAnchorEl, setFilterMenuAnchorEl] = useState(null);
   const [statusMenuAnchorEl, setStatusMenuAnchorEl] = useState(null);
   const [selectedIdeaForStatus, setSelectedIdeaForStatus] = useState(null);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [selectedIdeaForSchedule, setSelectedIdeaForSchedule] = useState(null);
+  const [scheduledDateTime, setScheduledDateTime] = useState(null);
+  const [lastScheduledTime, setLastScheduledTime] = useState(null);
+  const [suggestedTime, setSuggestedTime] = useState(null);
+  const [userTimezone, setUserTimezone] = useState(() => {
+    return localStorage.getItem('userTimezone') || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  });
 
   useEffect(() => {
     fetchIdeas();
+  }, []);
+
+  useEffect(() => {
+    // Listen for timezone changes
+    const handleTimezoneChange = () => {
+      const newTimezone = localStorage.getItem('userTimezone') || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      setUserTimezone(newTimezone);
+    };
+
+    window.addEventListener('timezonechange', handleTimezoneChange);
+    return () => window.removeEventListener('timezonechange', handleTimezoneChange);
   }, []);
 
   const fetchIdeas = async () => {
@@ -135,6 +168,92 @@ const Ideas = () => {
       setError('Failed to update status');
     } finally {
       handleStatusMenuClose();
+    }
+  };
+
+  const getLastScheduledTime = () => {
+    // Get all scheduled ideas and find the latest one
+    const scheduledIdeas = allIdeas.filter(idea => idea.status === 'scheduled' && idea.scheduledFor);
+    if (scheduledIdeas.length === 0) return null;
+    
+    // Sort by scheduledFor and get the last one
+    scheduledIdeas.sort((a, b) => new Date(a.scheduledFor) - new Date(b.scheduledFor));
+    return scheduledIdeas[scheduledIdeas.length - 1].scheduledFor;
+  };
+
+  const getSuggestedScheduleTime = () => {
+    const lastTime = getLastScheduledTime();
+    
+    if (!lastTime) {
+      // No scheduled posts, suggest current time + 1 hour
+      return getCurrentTimeInUserTimezone(userTimezone).add(1, 'hour');
+    }
+    
+    // Get the last scheduled time and add 24 hours
+    const lastTimeInUserTz = convertUTCToUserTimezone(lastTime, userTimezone);
+    return lastTimeInUserTz.add(24, 'hour');
+  };
+
+  const handleScheduleClick = (event, idea) => {
+    event.stopPropagation();
+    setSelectedIdeaForSchedule(idea);
+    
+    // Get last scheduled time and suggestion
+    const lastTime = getLastScheduledTime();
+    if (lastTime) {
+      setLastScheduledTime(convertUTCToUserTimezone(lastTime, userTimezone));
+    } else {
+      setLastScheduledTime(null);
+    }
+    
+    const suggested = getSuggestedScheduleTime();
+    setSuggestedTime(suggested);
+    
+    // Convert UTC time from database to user's timezone for display
+    // Use suggestion as default if this is a new schedule
+    const timeInUserTz = idea.scheduledFor 
+      ? convertUTCToUserTimezone(idea.scheduledFor, userTimezone)
+      : suggested;
+    
+    console.log('Opening schedule dialog:');
+    console.log('- Idea scheduledFor (UTC):', idea.scheduledFor);
+    console.log('- User timezone:', userTimezone);
+    console.log('- Suggested time:', suggested.format());
+    console.log('- Setting time to:', timeInUserTz.format());
+    
+    setScheduledDateTime(timeInUserTz);
+    setScheduleDialogOpen(true);
+  };
+
+  const handleScheduleDialogClose = () => {
+    setScheduleDialogOpen(false);
+    setSelectedIdeaForSchedule(null);
+    setScheduledDateTime(null);
+  };
+
+  const handleScheduleSave = async () => {
+    if (!selectedIdeaForSchedule || !scheduledDateTime) return;
+    
+    try {
+      // Convert user's timezone to UTC before saving to database
+      const utcTime = convertUserTimezoneToUTC(scheduledDateTime, userTimezone);
+      
+      console.log('Scheduled DateTime (user TZ):', scheduledDateTime.format());
+      console.log('User Timezone:', userTimezone);
+      console.log('Converted to UTC:', utcTime);
+      
+      await ideaAPI.updateIdea(selectedIdeaForSchedule._id, { 
+        scheduledFor: utcTime,
+        status: 'scheduled'
+      });
+      setSuccess('Schedule updated successfully');
+      await fetchIdeas();
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      console.error('Schedule save error:', err);
+      setError('Failed to update schedule');
+    } finally {
+      handleScheduleDialogClose();
     }
   };
 
@@ -229,22 +348,29 @@ const Ideas = () => {
   const handleGenerateArticle = async (idea) => {
     setSelectedIdea(idea);
     setArticleModalOpen(true);
-    
-    // Update idea status to ai_generated
-    try {
-      await ideaAPI.updateIdea(idea._id, { status: 'ai_generated' });
-      fetchIdeas();
-    } catch (err) {
-      console.error('Failed to update status:', err);
-    }
   };
 
-  const handleGenerateArticleAPI = async (ideaId, tone = 'default', regenerate = false) => {
+  const handleGenerateArticleAPI = async (ideaId, tone = 'default', regenerate = false, includeSources = false) => {
     try {
-      const response = await geminiAPI.generateArticle(ideaId, tone, regenerate);
+      const response = await geminiAPI.generateArticle(ideaId, tone, regenerate, includeSources);
+      
+      // Update local state with new credit info if provided
+      if (response.data.data.creditsRemaining !== undefined) {
+        // You can store this in context or state to update UI
+        console.log('Credits remaining:', response.data.data.creditsRemaining);
+      }
+      
       return response.data.data.article;
     } catch (err) {
-      throw new Error(err.response?.data?.message || 'Failed to generate article');
+      const errorMessage = err.response?.data?.message || 'Failed to generate article';
+      
+      // Show specific error for insufficient credits
+      if (errorMessage.includes('Insufficient AI credits')) {
+        setError('You have run out of AI credits. Please purchase more credits to continue generating articles.');
+        setTimeout(() => setError(''), 5000);
+      }
+      
+      throw new Error(errorMessage);
     }
   };
 
@@ -288,7 +414,7 @@ const Ideas = () => {
 
   return (
     <MainLayout>
-      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ px: { xs: 1, sm: 2 }, py: { xs: 2, sm: 3 } }}>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
             {error}
@@ -302,15 +428,7 @@ const Ideas = () => {
         )}
 
         {/* Input Section */}
-        <Paper
-          elevation={0}
-          sx={{
-            p: { xs: 1.5, sm: 2 },
-            mb: 2,
-            borderRadius: 2,
-            border: '1px solid #E0E0E0',
-          }}
-        >
+        <Box sx={{ mb: 3 }}>
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
             <TextField
               fullWidth
@@ -321,61 +439,49 @@ const Ideas = () => {
               onChange={(e) => setIdeaText(e.target.value)}
               placeholder="What's on your mind?"
               variant="outlined"
+              size="small"
               sx={{
                 '& .MuiOutlinedInput-root': {
-                  bgcolor: 'white',
-                  fontSize: { xs: '0.875rem', sm: '1rem' },
-                  fontFamily: 'Inter, sans-serif',
-                  py: { xs: 0.5, sm: 1 },
+                  fontSize: { xs: '0.875rem', sm: '0.95rem' },
                 },
               }}
             />
 
-            <Tooltip title="Save Idea" arrow>
-              <span>
-                <IconButton
-                  color="primary"
-                  onClick={handleSubmit}
-                  disabled={saving || !ideaText.trim()}
-                  sx={{
-                    bgcolor: 'primary.main',
-                    color: 'white',
-                    '&:hover': {
-                      bgcolor: 'primary.dark',
-                    },
-                    '&.Mui-disabled': {
-                      bgcolor: 'action.disabledBackground',
-                      color: 'action.disabled',
-                    },
-                  }}
-                >
-                  {saving ? <CircularProgress size={20} color="inherit" /> : <Save />}
-                </IconButton>
-              </span>
-            </Tooltip>
+            <IconButton
+              color="primary"
+              onClick={handleSubmit}
+              disabled={saving || !ideaText.trim()}
+              sx={{
+                bgcolor: 'primary.main',
+                color: 'white',
+                '&:hover': {
+                  bgcolor: 'primary.dark',
+                },
+                '&.Mui-disabled': {
+                  bgcolor: 'action.disabledBackground',
+                  color: 'action.disabled',
+                },
+              }}
+            >
+              {saving ? <CircularProgress size={20} color="inherit" /> : <Save />}
+            </IconButton>
 
-            <Tooltip title="Filter Ideas" arrow>
-              <IconButton
-                onClick={handleFilterMenuOpen}
-                sx={{
-                  bgcolor: statusFilter !== 'all' ? 'primary.main' : 'background.default',
-                  color: statusFilter !== 'all' ? 'white' : 'text.primary',
-                  border: '1px solid',
-                  borderColor: statusFilter !== 'all' ? 'primary.main' : 'divider',
-                  '&:hover': {
-                    bgcolor: statusFilter !== 'all' ? 'primary.dark' : 'action.hover',
-                  },
-                }}
+            <IconButton
+              onClick={handleFilterMenuOpen}
+              size="small"
+              sx={{
+                border: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              <Badge 
+                variant="dot" 
+                color="primary" 
+                invisible={statusFilter === 'all'}
               >
-                <Badge 
-                  variant="dot" 
-                  color="error" 
-                  invisible={statusFilter === 'all'}
-                >
-                  <FilterList />
-                </Badge>
-              </IconButton>
-            </Tooltip>
+                <FilterList fontSize="small" />
+              </Badge>
+            </IconButton>
 
             <Menu
               anchorEl={filterMenuAnchorEl}
@@ -385,80 +491,73 @@ const Ideas = () => {
               anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
               PaperProps={{
                 sx: {
-                  minWidth: 200,
-                  mt: 1,
+                  minWidth: 140,
+                  mt: 0.5,
                 }
               }}
             >
-              <Box sx={{ px: 2, py: 1 }}>
-                <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                  Filter by Status
-                </Typography>
-              </Box>
               {filterOptions.map((option) => (
                 <MenuItem 
                   key={option.value}
                   onClick={() => handleFilterChange(option.value)}
                   selected={statusFilter === option.value}
                   sx={{
-                    '&.Mui-selected': {
-                      bgcolor: 'rgba(0, 119, 181, 0.08)',
-                    },
+                    fontSize: '0.95rem',
+                    py: 1.5,
+                    minHeight: 48, // Better touch target
                   }}
                 >
                   <ListItemText 
                     primary={option.label}
                     primaryTypographyProps={{
+                      fontSize: '0.95rem',
                       fontWeight: statusFilter === option.value ? 600 : 400,
                     }}
                   />
                   {statusFilter === option.value && (
-                    <ListItemIcon sx={{ justifyContent: 'flex-end', minWidth: 'auto' }}>
-                      <Check fontSize="small" color="primary" />
-                    </ListItemIcon>
+                    <Check fontSize="small" color="primary" sx={{ ml: 1 }} />
                   )}
                 </MenuItem>
               ))}
             </Menu>
           </Box>
-        </Paper>
+        </Box>
 
-        {/* Ideas Table/Cards */}
-        <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+        {/* Ideas Grid */}
+        <Box sx={{ flexGrow: 1 }}>
 
           {loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}>
               <CircularProgress />
             </Box>
           ) : ideas.length === 0 ? (
-            <Paper sx={{ p: { xs: 3, sm: 5 }, textAlign: 'center', bgcolor: 'background.default' }}>
-              <LightbulbOutlined sx={{ fontSize: { xs: 40, sm: 60 }, color: 'text.secondary', mb: 2 }} />
-              <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
-                No ideas yet. Create your first idea!
+            <Box sx={{ p: { xs: 4, sm: 6 }, textAlign: 'center' }}>
+              <LightbulbOutlined sx={{ fontSize: 48, color: 'text.disabled', mb: 1.5 }} />
+              <Typography variant="body2" color="text.secondary">
+                No ideas yet. Start creating!
               </Typography>
-            </Paper>
+            </Box>
           ) : (
             /* Card View for All Devices */
-            <Grid container spacing={2}>
+            <Grid container spacing={{ xs: 1.5, sm: 2 }}>
               {ideas.map((idea) => (
                 <Grid size={{ xs: 12, sm: 6, md: 4 }} key={idea._id}>
                   <Card 
                     onClick={() => editingId !== idea._id && handleGenerateArticle(idea)}
+                    variant="outlined"
                     sx={{ 
-                      border: '1px solid #E0E0E0', 
-                      borderRadius: 2,
+                      borderRadius: 1,
                       cursor: editingId !== idea._id ? 'pointer' : 'default',
-                      transition: 'all 0.3s ease',
+                      transition: 'border-color 0.2s',
                       height: '100%',
                       display: 'flex',
                       flexDirection: 'column',
                       '&:hover': {
-                        boxShadow: editingId !== idea._id ? '0 4px 12px rgba(0, 0, 0, 0.12)' : 'none',
-                        transform: editingId !== idea._id ? 'translateY(-2px)' : 'none',
+                        borderColor: editingId !== idea._id ? 'primary.main' : 'divider',
                       },
                     }}
                   >
-                    <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+                    <CardContent sx={{ p: { xs: 1.5, sm: 2 }, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                       {editingId === idea._id ? (
                         <Box>
                           <TextField
@@ -467,79 +566,121 @@ const Ideas = () => {
                             rows={3}
                             value={editText}
                             onChange={(e) => setEditText(e.target.value)}
-                            sx={{ mb: 2 }}
+                            size="small"
+                            sx={{ mb: 1.5 }}
                           />
-                          <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-                            <Button
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            <IconButton
                               size="small"
-                              variant="contained"
-                              startIcon={<Check />}
+                              color="primary"
                               onClick={() => handleSaveEdit(idea._id)}
-                              sx={{ flex: 1 }}
+                              sx={{
+                                bgcolor: 'primary.main',
+                                color: 'white',
+                                '&:hover': { bgcolor: 'primary.dark' }
+                              }}
                             >
-                              Save
-                            </Button>
-                            <Button
+                              <Check fontSize="small" />
+                            </IconButton>
+                            <IconButton
                               size="small"
-                              variant="outlined"
-                              startIcon={<Close />}
                               onClick={handleCancelEdit}
-                              sx={{ flex: 1 }}
+                              sx={{
+                                border: '1px solid',
+                                borderColor: 'divider',
+                              }}
                             >
-                              Cancel
-                            </Button>
+                              <Close fontSize="small" />
+                            </IconButton>
                           </Box>
                         </Box>
                       ) : (
                         <>
-                          {/* Action Icons Row */}
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                            <Box sx={{ display: 'flex', gap: 0.5 }}>
-                              <Tooltip title={idea.isFavorite ? "Remove from favorites" : "Add to favorites"}>
-                                <IconButton
-                                  size="small"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleToggleFavorite(idea);
-                                  }}
-                                  sx={{ color: idea.isFavorite ? 'warning.main' : 'text.secondary' }}
-                                >
-                                  {idea.isFavorite ? <Star fontSize="small" /> : <StarOutline fontSize="small" />}
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="Edit">
-                                <IconButton
-                                  size="small"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleStartEdit(idea);
-                                  }}
-                                  sx={{ color: 'text.secondary' }}
-                                >
-                                  <Edit fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            </Box>
-                            <Chip 
-                              label={idea.status === 'ai_generated' ? 'AI Generated' : idea.status} 
-                              size="small"
-                              onClick={(e) => handleStatusMenuOpen(e, idea)}
-                              color={
-                                idea.status === 'posted' ? 'success' : 
-                                idea.status === 'scheduled' ? 'primary' : 
-                                idea.status === 'ai_generated' ? 'warning' : 
-                                idea.status === 'archived' ? 'error' :
-                                'default'
-                              }
-                              sx={{ 
-                                textTransform: 'capitalize', 
-                                fontSize: '0.7rem',
-                                cursor: 'pointer',
-                                '&:hover': {
-                                  opacity: 0.8,
+                          {/* Header Row */}
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                              <Chip 
+                                label={idea.status === 'ai_generated' ? 'AI' : idea.status} 
+                                size="small"
+                                onClick={(e) => handleStatusMenuOpen(e, idea)}
+                                color={
+                                  idea.status === 'posted' ? 'success' : 
+                                  idea.status === 'scheduled' ? 'primary' : 
+                                  idea.status === 'ai_generated' ? 'warning' : 
+                                  'default'
                                 }
-                              }}
-                            />
+                                sx={{ 
+                                  fontSize: '0.7rem',
+                                  height: 22,
+                                  cursor: 'pointer',
+                                }}
+                              />
+                              {idea.status === 'scheduled' && idea.scheduledFor && (
+                                <Chip
+                                  icon={<Schedule sx={{ fontSize: '0.8rem !important' }} />}
+                                  label={formatTimeLocale(idea.scheduledFor, userTimezone)}
+                                  size="small"
+                                  onClick={(e) => handleScheduleClick(e, idea)}
+                                  color="primary"
+                                  variant="outlined"
+                                  sx={{ 
+                                    fontSize: '0.65rem',
+                                    height: 22,
+                                    cursor: 'pointer',
+                                    '& .MuiChip-icon': {
+                                      fontSize: '0.8rem',
+                                    }
+                                  }}
+                                />
+                              )}
+                            </Box>
+                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleFavorite(idea);
+                                }}
+                                sx={{ 
+                                  color: idea.isFavorite ? 'warning.main' : 'text.secondary', 
+                                  p: { xs: 1, sm: 0.5 },
+                                  minWidth: { xs: 40, sm: 'auto' },
+                                  minHeight: { xs: 40, sm: 'auto' },
+                                }}
+                              >
+                                {idea.isFavorite ? <Star fontSize="small" /> : <StarOutline fontSize="small" />}
+                              </IconButton>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartEdit(idea);
+                                }}
+                                sx={{ 
+                                  color: 'text.secondary', 
+                                  p: { xs: 1, sm: 0.5 },
+                                  minWidth: { xs: 40, sm: 'auto' },
+                                  minHeight: { xs: 40, sm: 'auto' },
+                                }}
+                              >
+                                <Edit fontSize="small" />
+                              </IconButton>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDelete(idea);
+                                }}
+                                sx={{ 
+                                  color: 'error.main', 
+                                  p: { xs: 1, sm: 0.5 },
+                                  minWidth: { xs: 40, sm: 'auto' },
+                                  minHeight: { xs: 40, sm: 'auto' },
+                                }}
+                              >
+                                <DeleteOutline fontSize="small" />
+                              </IconButton>
+                            </Box>
                           </Box>
 
                           {/* Content */}
@@ -548,47 +689,23 @@ const Ideas = () => {
                             sx={{ 
                               flex: 1, 
                               wordBreak: 'break-word',
-                              mb: 2,
+                              mb: 1.5,
                               overflow: 'hidden',
                               display: '-webkit-box',
-                              WebkitLineClamp: 4,
+                              WebkitLineClamp: 3,
                               WebkitBoxOrient: 'vertical',
+                              fontSize: { xs: '0.875rem', sm: '0.875rem' },
+                              lineHeight: 1.5,
                             }}
                           >
                             {idea.content}
                           </Typography>
 
-                          {/* Dates and Info */}
-                          <Box sx={{ mt: 'auto' }}>
-                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                              Created: {new Date(idea.createdAt).toLocaleDateString()}
+                          {/* Footer */}
+                          <Box sx={{ pt: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                              {new Date(idea.createdAt).toLocaleDateString()}
                             </Typography>
-                            {idea.postedAt && (
-                              <Typography variant="caption" color="success.main" display="block" sx={{ mb: 0.5 }}>
-                                ✓ Posted: {new Date(idea.postedAt).toLocaleString()}
-                              </Typography>
-                            )}
-                            {idea.scheduledFor && idea.status === 'scheduled' && (
-                              <Typography variant="caption" color="primary.main" display="block" sx={{ mb: 0.5 }}>
-                                ⏰ Scheduled: {new Date(idea.scheduledFor).toLocaleString()}
-                              </Typography>
-                            )}
-                            
-                            {/* Delete Button */}
-                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                              <Tooltip title="Delete">
-                                <IconButton
-                                  size="small"
-                                  color="error"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDelete(idea);
-                                  }}
-                                >
-                                  <DeleteOutline fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            </Box>
                           </Box>
                         </>
                       )}
@@ -619,52 +736,123 @@ const Ideas = () => {
         anchorOrigin={{ horizontal: 'center', vertical: 'bottom' }}
         PaperProps={{
           sx: {
-            minWidth: 180,
-            mt: 1,
+            minWidth: 140,
+            mt: 0.5,
           }
         }}
       >
-        <Box sx={{ px: 2, py: 1 }}>
-          <Typography variant="caption" color="text.secondary" fontWeight={600}>
-            Change Status
-          </Typography>
-        </Box>
         {statusOptions.map((option) => (
           <MenuItem 
             key={option.value}
             onClick={() => handleStatusChange(option.value)}
             selected={selectedIdeaForStatus?.status === option.value}
             sx={{
-              '&.Mui-selected': {
-                bgcolor: 'rgba(0, 119, 181, 0.08)',
-              },
+              fontSize: '0.95rem',
+              py: 1.5,
+              minHeight: 48, // Better touch target
             }}
           >
-            <Chip
-              label={option.label}
-              size="small"
-              color={option.color}
-              variant={selectedIdeaForStatus?.status === option.value ? 'filled' : 'outlined'}
-              sx={{ 
-                mr: 1,
-                fontSize: '0.75rem',
-              }}
-            />
             <ListItemText 
               primary={option.label}
               primaryTypographyProps={{
-                fontSize: '0.875rem',
+                fontSize: '0.95rem',
                 fontWeight: selectedIdeaForStatus?.status === option.value ? 600 : 400,
               }}
             />
             {selectedIdeaForStatus?.status === option.value && (
-              <ListItemIcon sx={{ justifyContent: 'flex-end', minWidth: 'auto' }}>
-                <Check fontSize="small" color="primary" />
-              </ListItemIcon>
+              <Check fontSize="small" color="primary" sx={{ ml: 1 }} />
             )}
           </MenuItem>
         ))}
       </Menu>
+
+      {/* Schedule Date/Time Edit Dialog */}
+      <Dialog 
+        open={scheduleDialogOpen} 
+        onClose={handleScheduleDialogClose}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Schedule color="primary" />
+            <Typography variant="h6">Edit Schedule</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          {/* Smart Scheduling Suggestion */}
+          {suggestedTime && (
+            <Alert 
+              severity="info" 
+              sx={{ mb: 3 }}
+              action={
+                lastScheduledTime && (
+                  <Button 
+                    size="small" 
+                    onClick={() => setScheduledDateTime(suggestedTime)}
+                    sx={{ whiteSpace: 'nowrap' }}
+                  >
+                    Use This
+                  </Button>
+                )
+              }
+            >
+              <Typography variant="body2" fontWeight={500} gutterBottom>
+                Smart Suggestion
+              </Typography>
+              {lastScheduledTime ? (
+                <>
+                  <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                    Last scheduled post: <strong>{lastScheduledTime.format('MMM D, h:mm A')}</strong>
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                    Suggested time (24h later): <strong>{suggestedTime.format('MMM D, h:mm A')}</strong>
+                  </Typography>
+                </>
+              ) : (
+                <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                  No scheduled posts yet. Suggested time: <strong>{suggestedTime.format('MMM D, h:mm A')}</strong>
+                </Typography>
+              )}
+            </Alert>
+          )}
+          
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <DateTimePicker
+              label="Scheduled Date & Time"
+              value={scheduledDateTime}
+              onChange={(newValue) => {
+                console.log('DateTimePicker onChange:', newValue?.format());
+                setScheduledDateTime(newValue);
+              }}
+              slotProps={{
+                textField: {
+                  fullWidth: true,
+                  variant: 'outlined',
+                  helperText: `Time zone: ${userTimezone}`,
+                }
+              }}
+              minDateTime={getCurrentTimeInUserTimezone(userTimezone)}
+            />
+          </LocalizationProvider>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button 
+            onClick={handleScheduleDialogClose}
+            color="inherit"
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleScheduleSave}
+            variant="contained"
+            disabled={!scheduledDateTime}
+            startIcon={<Save />}
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
     </MainLayout>
   );
 };

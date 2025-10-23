@@ -10,6 +10,12 @@ import Dashboard from './pages/Dashboard';
 import Ideas from './pages/Ideas';
 import RecycleBin from './pages/RecycleBin';
 import Subscriptions from './pages/Subscriptions';
+import LinkedInConnections from './pages/LinkedInConnections';
+import CreditHistory from './pages/CreditHistory';
+import TagSets from './pages/TagSets';
+import ScheduledPosts from './pages/ScheduledPosts';
+import CalendarView from './pages/CalendarView';
+import Referrals from './pages/Referrals';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -20,7 +26,10 @@ function App() {
         <AuthProvider>
           <Router>
             <Routes>
-              <Route path="/" element={<Navigate to="/ideas" replace />} />
+              {/* Marketing Routes */}
+              <Route path="/" element={<Navigate to="/login" replace />} />
+              
+              {/* Auth Routes */}
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route
@@ -48,6 +57,22 @@ function App() {
                 }
               />
               <Route
+                path="/credit-history"
+                element={
+                  <ProtectedRoute>
+                    <CreditHistory />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/tagsets"
+                element={
+                  <ProtectedRoute>
+                    <TagSets />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/recycle-bin"
                 element={
                   <ProtectedRoute>
@@ -60,6 +85,38 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <Subscriptions />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/linkedin-connections"
+                element={
+                  <ProtectedRoute>
+                    <LinkedInConnections />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/scheduled-posts"
+                element={
+                  <ProtectedRoute>
+                    <ScheduledPosts />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/calendar"
+                element={
+                  <ProtectedRoute>
+                    <CalendarView />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/referrals"
+                element={
+                  <ProtectedRoute>
+                    <Referrals />
                   </ProtectedRoute>
                 }
               />

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
 import {
   Container,
@@ -10,19 +10,89 @@ import {
   Box,
   Alert,
   Divider,
+  Chip,
 } from '@mui/material';
-import { PersonAddOutlined } from '@mui/icons-material';
+import { PersonAddOutlined, CardGiftcard } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
+import { referralAPI } from '../services/referralService';
 
 const Register = () => {
   const navigate = useNavigate();
   const { register, googleLogin } = useAuth();
-  const [formData, setFormData] = useState({ name: '', email: '', password: '' });
+  const [searchParams] = useSearchParams();
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', referralCode: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [referralInfo, setReferralInfo] = useState(null);
+  const [validatingReferral, setValidatingReferral] = useState(false);
+  const [activePlan, setActivePlan] = useState(null);
+
+  useEffect(() => {
+    // Fetch active referral plan
+    fetchActivePlan();
+    
+    // Check if referral code is in URL
+    const refCode = searchParams.get('ref');
+    if (refCode) {
+      setFormData(prev => ({ ...prev, referralCode: refCode.toUpperCase() }));
+      validateReferralCode(refCode);
+    }
+  }, [searchParams]);
+
+  const fetchActivePlan = async () => {
+    try {
+      const response = await referralAPI.getActiveReferralPlan();
+      const plan = response.data.data.plan;
+      setActivePlan(plan);
+    } catch (err) {
+      console.error('Failed to fetch active plan:', err);
+      // Use default values if API fails
+      setActivePlan({
+        creditsForReferrer: 10,
+        creditsForReferee: 10
+      });
+    }
+  };
+
+  const validateReferralCode = async (code) => {
+    if (!code || code.trim().length === 0) {
+      setReferralInfo(null);
+      return;
+    }
+
+    try {
+      setValidatingReferral(true);
+      const response = await referralAPI.validateReferralCode(code);
+      setReferralInfo({
+        valid: true,
+        referrerName: response.data.data.referrerName,
+        creditsForReferee: response.data.data.creditsForReferee,
+        creditsForReferrer: response.data.data.creditsForReferrer
+      });
+    } catch (err) {
+      setReferralInfo({
+        valid: false,
+        error: 'Invalid referral code'
+      });
+    } finally {
+      setValidatingReferral(false);
+    }
+  };
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
+    
+    // Validate referral code when it changes
+    if (name === 'referralCode') {
+      const upperCode = value.toUpperCase();
+      setFormData(prev => ({ ...prev, referralCode: upperCode }));
+      if (upperCode.length >= 6) {
+        validateReferralCode(upperCode);
+      } else {
+        setReferralInfo(null);
+      }
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -37,7 +107,7 @@ const Register = () => {
     }
 
     try {
-      await register(formData.name, formData.email, formData.password);
+      await register(formData.name, formData.email, formData.password, formData.referralCode || null);
       navigate('/ideas');
     } catch (err) {
       const errorMessage = err.response?.data?.message || 'Registration failed';
@@ -57,7 +127,7 @@ const Register = () => {
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
       setLoading(true);
-      await googleLogin(credentialResponse.credential);
+      await googleLogin(credentialResponse.credential, formData.referralCode || null);
       navigate('/ideas');
     } catch (err) {
       setError(err.response?.data?.message || 'Google login failed');
@@ -102,6 +172,25 @@ const Register = () => {
               Join us and get started
             </Typography>
           </Box>
+
+          {referralInfo?.valid && (
+            <Alert 
+              severity="success"
+              icon={<CardGiftcard />}
+              sx={{ 
+                mb: 3,
+                borderRadius: 2,
+                bgcolor: 'success.lighter',
+              }}
+            >
+              <Typography variant="body2" fontWeight={600}>
+                Referral Code Applied! 🎉
+              </Typography>
+              <Typography variant="body2">
+                You'll receive {referralInfo?.creditsForReferee || 10} bonus AI credits when you complete registration!
+              </Typography>
+            </Alert>
+          )}
 
           {error && (
             <Alert 
@@ -167,6 +256,34 @@ const Register = () => {
               required
               variant="outlined"
               helperText="Minimum 6 characters"
+            />
+
+            <TextField
+              fullWidth
+              label="Referral Code (Optional)"
+              name="referralCode"
+              value={formData.referralCode}
+              onChange={handleChange}
+              margin="normal"
+              variant="outlined"
+              placeholder="Enter referral code"
+              helperText={
+                validatingReferral ? 'Validating...' :
+                referralInfo?.valid ? `Valid! Referred by ${referralInfo.referrerName}. You'll get ${referralInfo.creditsForReferee || 10} bonus credits!` :
+                referralInfo?.error ? referralInfo.error :
+                `Get ${activePlan?.creditsForReferee || 10} bonus credits by entering a friend's referral code`
+              }
+              InputProps={{
+                startAdornment: <CardGiftcard sx={{ mr: 1, color: 'text.secondary' }} />,
+                endAdornment: referralInfo?.valid && (
+                  <Chip label="Valid" color="success" size="small" />
+                )
+              }}
+              sx={{
+                '& .MuiFormHelperText-root': {
+                  color: referralInfo?.valid ? 'success.main' : referralInfo?.error ? 'error.main' : 'text.secondary'
+                }
+              }}
             />
 
             <Button

@@ -29,8 +29,8 @@ export const AuthProvider = ({ children }) => {
     return response.data;
   };
 
-  const register = async (name, email, password) => {
-    const response = await authAPI.register({ name, email, password });
+  const register = async (name, email, password, referralCode = null) => {
+    const response = await authAPI.register({ name, email, password, referralCode });
     const { user, token } = response.data.data;
     
     localStorage.setItem('token', token);
@@ -40,8 +40,8 @@ export const AuthProvider = ({ children }) => {
     return response.data;
   };
 
-  const googleLogin = async (idToken) => {
-    const response = await authAPI.googleLogin(idToken);
+  const googleLogin = async (idToken, referralCode = null) => {
+    const response = await authAPI.googleLogin(idToken, referralCode);
     const { user, token } = response.data.data;
     
     localStorage.setItem('token', token);

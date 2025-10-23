@@ -53,17 +53,21 @@ const Login = () => {
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
       setLoading(true);
+      console.log('Google login success, credential received');
       await googleLogin(credentialResponse.credential);
       navigate('/ideas');
     } catch (err) {
-      setError(err.response?.data?.message || 'Google login failed');
+      console.error('Google login error:', err);
+      console.error('Error details:', err.response?.data);
+      setError(err.response?.data?.message || err.message || 'Google login failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogleError = () => {
-    setError('Google login failed');
+  const handleGoogleError = (error) => {
+    console.error('Google OAuth error:', error);
+    setError('Google login failed. Please check your Google account and try again.');
   };
 
   return (
