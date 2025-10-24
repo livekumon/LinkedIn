@@ -4,6 +4,8 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import CssBaseline from '@mui/material/CssBaseline';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import Website from './pages/Website';
+import AIGeneration from './pages/AIGeneration';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
@@ -26,8 +28,11 @@ function App() {
         <AuthProvider>
           <Router>
             <Routes>
-              {/* Marketing Routes */}
-              <Route path="/" element={<Navigate to="/login" replace />} />
+              {/* Website Landing Page */}
+              <Route path="/" element={<Website />} />
+              
+              {/* AI Generation Page */}
+              <Route path="/ai-generation" element={<AIGeneration />} />
               
               {/* Auth Routes */}
               <Route path="/login" element={<Login />} />
